@@ -1,11 +1,9 @@
 import { inngest } from "@/lib/inngest/client";
+import { escapeTelegramHtml as escapeHtml, sendTelegramMessage } from "@/lib/telegram";
 
 // Full Inngest ID of this function (app id + function id). Used to skip our own
 // failures so a broken Telegram setup can't trigger an endless notification loop.
 const SELF_ID = "openStock-notify-failures-telegram";
-
-const escapeHtml = (value: unknown) =>
-    String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
  * Sends a Telegram message whenever any Inngest run fails or is cancelled.
@@ -18,9 +16,8 @@ export const notifyFailuresToTelegram = inngest.createFunction(
         { event: "inngest/function.cancelled", if: `event.data.function_id != '${SELF_ID}'` },
     ],
     async ({ event, step }) => {
-        const token = process.env.TELEGRAM_BOT_TOKEN;
         const chatId = process.env.TELEGRAM_CHAT_ID;
-        if (!token || !chatId) {
+        if (!process.env.TELEGRAM_BOT_TOKEN || !chatId) {
             return { skipped: true, reason: "TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is not set" };
         }
 
@@ -47,31 +44,10 @@ export const notifyFailuresToTelegram = inngest.createFunction(
                 : null,
         ].filter(Boolean);
 
-        const messageId = await step.run("send-telegram-message", async () => {
-            const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    chat_id: chatId,
-                    text: lines.join("\n"),
-                    parse_mode: "HTML",
-                    disable_web_page_preview: true,
-                }),
-            });
-            const body = (await res.json().catch(() => ({}))) as {
-                ok?: boolean;
-                description?: string;
-                result?: { message_id?: number };
-            };
-            if (!res.ok || !body.ok) {
-                throw new Error(`Telegram API error ${res.status}: ${body.description ?? "unknown"}`);
-            }
-            return body.result?.message_id ?? null;
-        });
+        const messageId = await step.run("send-telegram-message", () =>
+            sendTelegramMessage(chatId, lines.join("\n"))
+        );
 
         return { sent: true, messageId, functionId: data.function_id ?? "unknown" };
     }
 );
-
-// Temporary alias so the route keeps building until it is updated.
-export { notifyFailuresToTelegram as notifyFailuresToN8n };
