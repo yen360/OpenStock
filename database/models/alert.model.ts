@@ -9,6 +9,11 @@ export interface IAlert extends Document {
     triggered: boolean;
     expiresAt: Date;
     createdAt: Date;
+    notifyEmail: boolean;
+    notifyTelegram: boolean;
+    telegramChatId?: string;
+    triggeredAt?: Date;
+    triggeredPrice?: number;
 }
 
 const AlertSchema = new Schema<IAlert>(
@@ -24,6 +29,11 @@ const AlertSchema = new Schema<IAlert>(
             default: () => new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days from now
         },
         createdAt: { type: Date, default: Date.now },
+        notifyEmail: { type: Boolean, default: true },
+        notifyTelegram: { type: Boolean, default: false },
+        telegramChatId: { type: String, trim: true },
+        triggeredAt: { type: Date },
+        triggeredPrice: { type: Number },
     },
     { timestamps: true }
 );
