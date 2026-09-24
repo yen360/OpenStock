@@ -1,4 +1,5 @@
 import { inngest } from "@/lib/inngest/client";
+import { NonRetriableError } from "inngest";
 import { NEWS_SUMMARY_EMAIL_PROMPT, PERSONALIZED_WELCOME_EMAIL_PROMPT } from "@/lib/inngest/prompts";
 import { sendNewsSummaryEmail, sendWelcomeEmail } from "@/lib/nodemailer";
 import { getAllUsersForNewsEmail } from "@/lib/actions/user.actions";
@@ -268,22 +269,88 @@ export const checkStockAlerts = inngest.createFunction(
             }
         }
 
-        // Step 5: Process triggers
+        // Step 5: Mark alerts as triggered first, so a delivery problem can never
+        // cause the same alert to fire again on the next 5-minute run.
         if (triggeredAlerts.length > 0) {
-            await step.run('process-triggered-alerts', async () => {
+            await step.run('mark-alerts-triggered', async () => {
                 const { connectToDatabase } = await import("@/database/mongoose");
                 const { Alert } = await import("@/database/models/alert.model");
-                // In a real app we would import 'kit' here and use kit.sendBroadcast or similar
-                // For now, we just log it as the critical logic is the detection
                 await connectToDatabase();
 
                 for (const { alert, currentPrice } of triggeredAlerts) {
                     console.log(`🚀 ALERT FIRED: ${alert.symbol} is ${currentPrice} (${alert.condition} ${alert.targetPrice})`);
-
-                    // Mark triggered
-                    await Alert.findByIdAndUpdate(alert._id, { triggered: true, active: false });
+                    await Alert.findByIdAndUpdate(alert._id, {
+                        triggered: true,
+                        active: false,
+                        triggeredAt: new Date(),
+                        triggeredPrice: currentPrice,
+                    });
                 }
             });
+
+            // Step 6: Notify through each channel the user picked (one step per channel,
+            // so a retry never re-sends on a channel that already succeeded).
+            const failures: string[] = [];
+            const appUrl = (process.env.BETTER_AUTH_URL || 'https://my-openstock.vercel.app').replace(/\/$/, '');
+
+            for (const { alert, currentPrice } of triggeredAlerts) {
+                const id = String(alert._id);
+                const wantsEmail = alert.notifyEmail !== false; // older alerts default to email
+                const wantsTelegram = alert.notifyTelegram === true && Boolean(alert.telegramChatId);
+
+                if (wantsEmail) {
+                    try {
+                        await step.run(`email-alert-${id}`, async () => {
+                            const { connectToDatabase } = await import("@/database/mongoose");
+                            const { sendPriceAlertEmail } = await import("@/lib/nodemailer");
+                            const mongoose = await connectToDatabase();
+                            const db = mongoose.connection.db;
+                            if (!db) throw new Error('Mongoose connection not connected');
+
+                            const userFilter = mongoose.Types.ObjectId.isValid(alert.userId)
+                                ? { $or: [{ _id: new mongoose.Types.ObjectId(alert.userId) }, { id: alert.userId }] }
+                                : { id: alert.userId };
+                            const user = await db.collection('user').findOne(userFilter, { projection: { email: 1 } });
+                            if (!user?.email) throw new Error(`No email found for user ${alert.userId}`);
+
+                            return await sendPriceAlertEmail({
+                                email: user.email,
+                                symbol: alert.symbol,
+                                condition: alert.condition,
+                                currentPrice,
+                                targetPrice: alert.targetPrice,
+                            });
+                        });
+                    } catch (error) {
+                        console.error(`❌ Price alert email failed for ${alert.symbol}`, error);
+                        failures.push(`email ${alert.symbol} (${id})`);
+                    }
+                }
+
+                if (wantsTelegram) {
+                    try {
+                        await step.run(`telegram-alert-${id}`, async () => {
+                            const { sendTelegramMessage, escapeTelegramHtml: esc } = await import("@/lib/telegram");
+                            const direction = alert.condition === 'ABOVE' ? 'above' : 'below';
+                            const icon = alert.condition === 'ABOVE' ? '📈' : '📉';
+                            const text = [
+                                `${icon} <b>Price alert: ${esc(alert.symbol)}</b>`,
+                                `${esc(alert.symbol)} is now <b>$${currentPrice.toFixed(2)}</b>, ${direction} your target of <b>$${Number(alert.targetPrice).toFixed(2)}</b>.`,
+                                `<a href="${esc(appUrl)}/stocks/${encodeURIComponent(alert.symbol)}">Open ${esc(alert.symbol)} in OpenStock</a>`,
+                            ].join('\n');
+                            return await sendTelegramMessage(String(alert.telegramChatId), text);
+                        });
+                    } catch (error) {
+                        console.error(`❌ Price alert Telegram message failed for ${alert.symbol}`, error);
+                        failures.push(`telegram ${alert.symbol} (${id})`);
+                    }
+                }
+            }
+
+            if (failures.length > 0) {
+                // Fail once (no retries) so the failure notifier reports it on Telegram.
+                throw new NonRetriableError(`Price alert delivery failed: ${failures.join(', ')}`);
+            }
         }
 
         return {
