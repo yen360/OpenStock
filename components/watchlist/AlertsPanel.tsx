@@ -50,8 +50,18 @@ export default function AlertsPanel({ alerts, onRefresh }: AlertsPanelProps) {
                                     <div className="mt-2 text-xs text-yellow-500 font-medium">
                                         Condition: Price {alert.condition.toLowerCase()} {formatCurrency(alert.targetPrice)}
                                     </div>
-                                    <div className="text-[10px] text-gray-500 mt-1">
-                                        Active until {new Date(new Date(alert.createdAt).getTime() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString()}
+                                    {alert.triggered ? (
+                                        <div className="text-[10px] text-green-500 mt-1">
+                                            Triggered{alert.triggeredPrice ? ` at ${formatCurrency(alert.triggeredPrice)}` : ""}
+                                            {alert.triggeredAt ? ` on ${new Date(alert.triggeredAt).toLocaleString()}` : ""}
+                                        </div>
+                                    ) : (
+                                        <div className="text-[10px] text-gray-500 mt-1">
+                                            Active until {new Date(alert.expiresAt ?? new Date(alert.createdAt).getTime() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString()}
+                                        </div>
+                                    )}
+                                    <div className="text-[10px] text-gray-500 mt-0.5">
+                                        Notify via {[alert.notifyEmail !== false ? "Email" : null, alert.notifyTelegram ? "Telegram" : null].filter(Boolean).join(" + ")}
                                     </div>
                                 </div>
                                 <div className="flex flex-col space-y-2">
