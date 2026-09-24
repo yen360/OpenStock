@@ -3,6 +3,7 @@
 import { connectToDatabase } from '@/database/mongoose';
 import { Alert, type IAlert } from '@/database/models/alert.model';
 import { revalidatePath } from 'next/cache';
+import { isValidTelegramChatId } from '@/lib/telegram';
 
 // Create a new alert
 export async function createAlert(params: {
@@ -10,11 +11,31 @@ export async function createAlert(params: {
     symbol: string;
     targetPrice: number;
     condition: 'ABOVE' | 'BELOW';
+    notifyEmail?: boolean;
+    notifyTelegram?: boolean;
+    telegramChatId?: string;
 }) {
+    const notifyEmail = params.notifyEmail ?? true;
+    const notifyTelegram = params.notifyTelegram ?? false;
+    const telegramChatId = params.telegramChatId?.trim() || undefined;
+
+    if (!notifyEmail && !notifyTelegram) {
+        throw new Error('Choose at least one notification channel');
+    }
+    if (notifyTelegram && (!telegramChatId || !isValidTelegramChatId(telegramChatId))) {
+        throw new Error('A valid Telegram chat ID is required for Telegram alerts');
+    }
+
     try {
         await connectToDatabase();
         const newAlert = await Alert.create({
-            ...params,
+            userId: params.userId,
+            symbol: params.symbol,
+            targetPrice: params.targetPrice,
+            condition: params.condition,
+            notifyEmail,
+            notifyTelegram,
+            telegramChatId: notifyTelegram ? telegramChatId : undefined,
             active: true,
             // expiresAt handled by default value in schema
         });
