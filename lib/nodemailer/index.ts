@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { WELCOME_EMAIL_TEMPLATE, NEWS_SUMMARY_EMAIL_TEMPLATE } from "@/lib/nodemailer/templates";
+import { WELCOME_EMAIL_TEMPLATE, NEWS_SUMMARY_EMAIL_TEMPLATE, STOCK_ALERT_UPPER_EMAIL_TEMPLATE, STOCK_ALERT_LOWER_EMAIL_TEMPLATE } from "@/lib/nodemailer/templates";
 
 type EmailSendResult =
     | { status: 'skipped' }
@@ -91,4 +91,49 @@ export const sendNewsSummaryEmail = async (
         console.error('❌ Failed to send news summary email:', error);
         throw error;
     }
+};
+
+const fillTemplate = (template: string, values: Record<string, string>) =>
+    Object.entries(values).reduce((html, [key, value]) => html.split(`{{${key}}}`).join(value), template);
+
+export const sendPriceAlertEmail = async ({
+    email,
+    symbol,
+    company,
+    condition,
+    currentPrice,
+    targetPrice,
+}: {
+    email: string;
+    symbol: string;
+    company?: string;
+    condition: 'ABOVE' | 'BELOW';
+    currentPrice: number;
+    targetPrice: number;
+}) => {
+    if (!transporter) {
+        console.warn('⚠️ Price alert email skipped: email credentials are not configured.');
+        return { status: 'skipped' } satisfies EmailSendResult;
+    }
+
+    const usd = (n: number) => `$${n.toFixed(2)}`;
+    const template = condition === 'ABOVE' ? STOCK_ALERT_UPPER_EMAIL_TEMPLATE : STOCK_ALERT_LOWER_EMAIL_TEMPLATE;
+    const html = fillTemplate(template, {
+        symbol,
+        company: company || symbol,
+        currentPrice: usd(currentPrice),
+        targetPrice: usd(targetPrice),
+        timestamp: new Date().toUTCString(),
+    });
+    const direction = condition === 'ABOVE' ? 'above' : 'below';
+
+    const info = await transporter.sendMail({
+        from: `"Openstock" <${process.env.NODEMAILER_EMAIL}>`,
+        to: email,
+        subject: `Price alert: ${symbol} is ${direction} ${usd(targetPrice)} (now ${usd(currentPrice)})`,
+        text: `${symbol} is now ${usd(currentPrice)}, ${direction} your target of ${usd(targetPrice)}.`,
+        html,
+    });
+    console.log(`✅ Price alert email sent for ${symbol}:`, info.messageId);
+    return { status: 'sent', messageId: info.messageId } satisfies EmailSendResult;
 };
