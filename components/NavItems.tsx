@@ -6,7 +6,7 @@ import {NAV_ITEMS} from "@/lib/constants";
 import Link from "next/link";
 import {usePathname} from "next/navigation";
 import SearchCommand from "@/components/SearchCommand";
-import { Heart } from 'lucide-react';
+import { Coffee } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 // Create context for popup state
@@ -53,12 +53,14 @@ const NavItems = ({initialStocks}: { initialStocks: StockWithWatchlistStatus[]})
             })}
             <li key="donate">
                 <Button
-                    onClick={openDonatePopup}
-                    className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white font-semibold px-4 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 flex items-center gap-2 animate-pulse"
+                    asChild
                     size="sm"
+                    className="bg-[#FFDD00] hover:bg-[#FFDD00]/90 text-black font-semibold px-4 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 flex items-center gap-2"
                 >
-                    <Heart className="h-4 w-4 fill-current" />
-                    Donate
+                    <a href="https://buymeacoffee.com/stevie90" target="_blank" rel="noopener noreferrer">
+                        <Coffee className="h-4 w-4" />
+                        Buy me a coffee
+                    </a>
                 </Button>
             </li>
         </ul>
