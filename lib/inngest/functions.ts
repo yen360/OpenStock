@@ -46,6 +46,18 @@ export const sendSignUpEmail = inngest.createFunction(
             }
         })
 
+        // Add the new user to Kit (tag "OpenStock users") so the weekly newsletter reaches them.
+        // Skipped if Kit isn't configured; any other error fails the run and alerts Telegram.
+        await step.run('add-to-kit', async () => {
+            if (!process.env.KIT_API_KEY || !process.env.KIT_API_SECRET) {
+                return { skipped: true, reason: 'KIT_API_KEY or KIT_API_SECRET is not set' };
+            }
+            const { kit } = await import("@/lib/kit");
+            const { data: { email, name } } = event;
+            const firstName = String(name ?? '').trim().split(' ')[0];
+            return await kit.tagSubscriber(email, firstName);
+        })
+
         return {
             success: true,
             message: 'Welcome email sent successfully'
