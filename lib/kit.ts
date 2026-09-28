@@ -54,6 +54,28 @@ export const kit = {
     },
 
     /**
+     * Subscribe someone to Kit by applying a tag (creates the subscriber if new).
+     * Used for OpenStock sign-ups so the weekly newsletter reaches them.
+     */
+    tagSubscriber: async (email: string, firstName: string, tagId?: string) => {
+        const { apiKey } = getConfig();
+        const targetTagId = tagId || process.env.KIT_SIGNUP_TAG_ID || '24061795'; // Kit tag "OpenStock users"
+        const response = await fetch(`https://api.convertkit.com/v3/tags/${targetTagId}/subscribe`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: apiKey, email, first_name: firstName }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(`Kit tag subscribe failed (${response.status}): ${JSON.stringify(body)}`);
+        }
+        return {
+            subscriberId: body.subscription?.subscriber?.id ?? null,
+            state: body.subscription?.state ?? null,
+        };
+    },
+
+    /**
      * Send a broadcast (Newsletter/Summary)
      * Note: This usually creates a draft or sends to a segment. 
      * For programmatic 1-to-1 emails, Kit is less standard than transactional providers, 
