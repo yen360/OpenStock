@@ -507,7 +507,7 @@ export const checkInactiveUsers = inngest.createFunction(
                     // 2. (This is too slow for loop).
 
                     // CHECK: Is this the test user?
-                    if (user.email === '11aravipratapsingh@gmail.com') {
+                    if (user.email === 'steventan@protonmail.com') {
                         console.log(`🚀 Sending REAL Re-engagement Email to TEST USER: ${user.email}`);
                         await kit.sendBroadcast(subject, content);
                     } else {
